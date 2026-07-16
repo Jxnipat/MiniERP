@@ -65,6 +65,12 @@ List all orders:
 curl http://127.0.0.1:8000/purchase-orders
 ```
 
+## Run tests
+
+```bash
+pytest
+```
+
 ## Next steps (not built yet)
 
 - Swap the in-memory dict for a real database (e.g. SQLite via SQLAlchemy).
