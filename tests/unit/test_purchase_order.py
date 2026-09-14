@@ -17,6 +17,21 @@ def make_po(status: POStatus = POStatus.APPROVED) -> PurchaseOrder:
     return po
 
 
+def make_two_line_po(status: POStatus = POStatus.APPROVED) -> PurchaseOrder:
+    """Helper to create a PO with two lines for testing multi-line scenarios."""
+    po = PurchaseOrder.create_from_pr(
+        pr_id=1,
+        pr_status=PRStatus.APPROVED,
+        vendor_name="Acme Supplies Co.",
+        lines=[
+            POLine(line_number=1, item_name="Laptop Stand", quantity=10, unit_price=25.50),
+            POLine(line_number=2, item_name="Mouse Pad", quantity=5, unit_price=10.00),
+        ],
+    )
+    po.status = status
+    return po
+
+
 def test_create_from_pr_requires_approved_pr():
     with pytest.raises(DomainValidationError):
         PurchaseOrder.create_from_pr(
@@ -99,3 +114,46 @@ def test_close_requires_received_status():
     po.close()
 
     assert po.status == POStatus.CLOSED
+
+
+# New tests for receive_goods fixes (Finding 1, 2, 3)
+
+
+def test_receive_goods_no_partial_mutation_on_validation_failure():
+    """
+    Finding 1: Multi-line PO where first line is valid but second line fails validation.
+    The call should raise DomainValidationError AND leave the first line unchanged.
+    This verifies that validation happens before any mutation.
+    """
+    po = make_two_line_po(status=POStatus.APPROVED)
+
+    with pytest.raises(DomainValidationError):
+        po.receive_goods({1: 5, 2: 99})  # Line 1 valid (5 <= 10), Line 2 invalid (99 > 5)
+
+    # Assert first line was NOT mutated
+    assert po.lines[0].quantity_received == 0
+    assert po.lines[0].remaining_quantity == 10
+    assert po.status == POStatus.APPROVED  # Status unchanged
+
+
+def test_receive_goods_empty_dict_raises():
+    """
+    Finding 2: receive_goods({}) should raise DomainValidationError and not change status.
+    """
+    po = make_po(status=POStatus.APPROVED)
+    original_status = po.status
+
+    with pytest.raises(DomainValidationError):
+        po.receive_goods({})
+
+    assert po.status == original_status
+
+
+def test_receive_goods_negative_qty_raises():
+    """
+    Finding 3: receive_goods with negative qty should raise DomainValidationError.
+    """
+    po = make_po(status=POStatus.APPROVED)
+
+    with pytest.raises(DomainValidationError):
+        po.receive_goods({1: -1})

@@ -100,14 +100,27 @@ class PurchaseOrder(StateMachineMixin):
         received_lines: {line_number: quantity received in this delivery}.
         Not a plain `_transition()` call because the resulting status
         depends on the quantities, not just a fixed action->state map.
+
+        Uses two-pass validation: first validates all inputs without mutation,
+        then applies all mutations if validation succeeds. This ensures atomicity:
+        if any line fails validation, no lines are modified.
         """
+        if not received_lines:
+            raise DomainValidationError("received_lines cannot be empty")
+
         if self.status not in (POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED):
             raise DomainValidationError(
                 f"cannot receive goods against a PO in status '{self.status}'"
             )
 
         lines_by_number = {line.line_number: line for line in self.lines}
+
+        # First pass: validate all (line_number, qty) pairs without mutating
         for line_number, qty in received_lines.items():
+            if qty <= 0:
+                raise DomainValidationError(
+                    f"line {line_number}: qty must be greater than 0"
+                )
             line = lines_by_number.get(line_number)
             if line is None:
                 raise DomainValidationError(f"PO has no line number {line_number}")
@@ -116,8 +129,13 @@ class PurchaseOrder(StateMachineMixin):
                     f"line {line_number}: cannot receive {qty}, only "
                     f"{line.remaining_quantity} remaining"
                 )
+
+        # Second pass: apply all mutations (only reached if all validations passed)
+        for line_number, qty in received_lines.items():
+            line = lines_by_number[line_number]
             line.quantity_received += qty
 
+        # Determine status based on remaining quantities
         if all(line.remaining_quantity == 0 for line in self.lines):
             self.status = POStatus.RECEIVED
         else:
