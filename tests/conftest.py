@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.session import seed_accounts
+from app.infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
 
 
 @pytest.fixture()
@@ -19,3 +20,8 @@ def session_factory():
         session.commit()
     yield factory
     engine.dispose()
+
+
+@pytest.fixture()
+def uow(session_factory):
+    return SqlAlchemyUnitOfWork(session_factory)
