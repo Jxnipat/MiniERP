@@ -4,10 +4,12 @@ Entry point for the Mini ERP API.
 Run it with:
     uvicorn app.main:app --reload
 
-Then open http://127.0.0.1:8000/docs for the interactive API docs.
+Then open http://127.0.0.1:8000/docs for the interactive API docs, or
+http://127.0.0.1:8000/ui for a simple point-and-click demo page.
 """
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.db.session import init_db
 from app.interface.api.routers import (
@@ -29,6 +31,8 @@ app.include_router(purchase_orders.router)
 app.include_router(goods_receipts.router)
 app.include_router(payments.router)
 app.include_router(ledger.router)
+
+app.mount("/ui", StaticFiles(directory="static", html=True), name="ui")
 
 
 @app.on_event("startup")

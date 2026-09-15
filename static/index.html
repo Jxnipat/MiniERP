@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini ERP — Procure-to-Pay Demo</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #dde1e6;
+    --text: #1c2530;
+    --muted: #6b7684;
+    --primary: #2f6fed;
+    --primary-dark: #1f52c0;
+    --green: #1a9c5b;
+    --red: #d13b3b;
+    --amber: #c98a1f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 6px; }
+  .card h2 .count { color: var(--muted); font-weight: normal; font-size: 12px; }
+  form.inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--border);
+  }
+  form.inline input, form.inline select {
+    flex: 1 1 100px;
+    min-width: 90px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  form.inline button {
+    flex: 1 1 100%;
+  }
+  button {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--primary-dark); }
+  button.secondary { background: #eef1f5; color: var(--text); }
+  button.secondary:hover { background: #e0e4ea; }
+  button.danger { background: var(--red); }
+  button.danger:hover { background: #a92b2b; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .badge.draft { background: var(--muted); }
+  .badge.submitted { background: var(--amber); }
+  .badge.approved, .badge.posted, .badge.paid, .badge.received { background: var(--green); }
+  .badge.rejected, .badge.cancelled { background: var(--red); }
+  .badge.partially_received { background: #7a5cd6; }
+  .actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+  .ledger {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .ledger h2 { font-size: 15px; margin: 0 0 12px; }
+  .ledger-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 700px) { .ledger-cols { grid-template-columns: 1fr; } }
+  .balance-ok { color: var(--green); font-weight: 600; }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--text);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    max-width: 360px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .2s, transform .2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--red); }
+  small.hint { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Mini ERP — Procure-to-Pay Demo</h1>
+<p class="subtitle">Purchase Requisition → Purchase Order → Goods Receipt → Payment, with an automated double-entry GL Engine.</p>
+
+<div class="grid">
+
+  <div class="card">
+    <h2>1. Purchase Requisitions <span class="count" id="pr-count"></span></h2>
+    <form class="inline" id="pr-form">
+      <input name="requested_by" placeholder="ผู้ขอ (เช่น อลิซ)" required>
+      <input name="item_name" placeholder="ชื่อสินค้า" required>
+      <input name="quantity" type="number" min="1" placeholder="จำนวน" required>
+      <input name="unit_price" type="number" min="0.01" step="0.01" placeholder="ราคา/หน่วย" required>
+      <button type="submit">+ สร้าง PR</button>
+    </form>
+    <div id="pr-table"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Purchase Orders <span class="count" id="po-count"></span></h2>
+    <form class="inline" id="po-form">
+      <select name="pr_id" required><option value="">เลือก PR ที่ approved</option></select>
+      <input name="vendor_name" placeholder="ชื่อผู้ขาย" required>
+      <button type="submit">+ สร้าง PO</button>
+    </form>
+    <small class="hint">ดึงรายละเอียดสินค้า (item/qty/price) มาจาก PR ที่เลือกอัตโนมัติ</small>
+    <div id="po-table"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Goods Receipts <span class="count" id="gr-count"></span></h2>
+    <form class="inline" id="gr-form">
+      <select name="po_id" required><option value="">เลือก PO ที่ approved</option></select>
+      <input name="quantity_received" type="number" min="1" placeholder="จำนวนที่รับ">
+      <button type="submit">+ สร้าง GR</button>
+    </form>
+    <small class="hint">รับของสำหรับ line ที่ 1 ของ PO ที่เลือก</small>
+    <div id="gr-table"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. Payments <span class="count" id="payment-count"></span></h2>
+    <form class="inline" id="payment-form">
+      <select name="gr_id" required><option value="">เลือก GR ที่ posted</option></select>
+      <button type="submit">+ สร้าง Payment</button>
+    </form>
+    <small class="hint">ยอดจ่ายเท่ากับยอดรวมของ GR โดยอัตโนมัติ (ต้องจ่ายเต็มจำนวน)</small>
+    <div id="payment-table"></div>
+  </div>
+
+</div>
+
+<div class="ledger">
+  <h2>📒 General Ledger</h2>
+  <div class="ledger-cols">
+    <div>
+      <h3 style="font-size:13px;margin:0 0 8px;">Journal Entries</h3>
+      <div id="journal-table"></div>
+    </div>
+    <div>
+      <h3 style="font-size:13px;margin:0 0 8px;">Trial Balance</h3>
+      <div id="trial-balance-table"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "";
+let state = { prs: [], pos: [], grs: [], payments: [], entries: [], balance: [] };
+
+function showToast(msg, isError) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove("show"), 3500);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const detail = data && data.detail ? data.detail : `HTTP ${res.status}`;
+    throw new Error(detail);
+  }
+  return data;
+}
+
+function badge(status) {
+  return `<span class="badge ${status}">${status}</span>`;
+}
+
+async function refreshAll() {
+  const [prs, pos, grs, payments, entries, balance] = await Promise.all([
+    api("GET", "/purchase-requisitions"),
+    api("GET", "/purchase-orders"),
+    api("GET", "/goods-receipts"),
+    api("GET", "/payments"),
+    api("GET", "/ledger/journal-entries"),
+    api("GET", "/ledger/trial-balance"),
+  ]);
+  state = { prs, pos, grs, payments, entries, balance };
+  renderAll();
+}
+
+async function act(promiseFn, successMsg) {
+  try {
+    await promiseFn();
+    showToast(successMsg);
+    await refreshAll();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ---------- Purchase Requisitions ----------
+
+function renderPR() {
+  document.getElementById("pr-count").textContent = `(${state.prs.length})`;
+  const el = document.getElementById("pr-table");
+  if (!state.prs.length) { el.innerHTML = '<div class="empty">ยังไม่มี PR</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>ผู้ขอ</th><th>ยอดรวม</th><th>สถานะ</th><th>Action</th></tr></thead><tbody>
+    ${state.prs.map(pr => `
+      <tr>
+        <td>${pr.id}</td>
+        <td>${pr.requested_by}</td>
+        <td>${pr.total_amount.toFixed(2)}</td>
+        <td>${badge(pr.status)}</td>
+        <td class="actions">
+          ${pr.status === "draft" ? `<button onclick="prAction(${pr.id},'submit')">Submit</button>` : ""}
+          ${pr.status === "submitted" ? `<button onclick="prAction(${pr.id},'approve')">Approve</button><button class="danger" onclick="prAction(${pr.id},'reject')">Reject</button>` : ""}
+        </td>
+      </tr>`).join("")}
+  </tbody></table>`;
+}
+
+function prAction(id, action) {
+  act(() => api("POST", `/purchase-requisitions/${id}/${action}`), `PR #${id}: ${action} สำเร็จ`);
+}
+
+document.getElementById("pr-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  act(() => api("POST", "/purchase-requisitions", {
+    requested_by: f.get("requested_by"),
+    lines: [{
+      item_name: f.get("item_name"),
+      quantity: Number(f.get("quantity")),
+      unit_price: Number(f.get("unit_price")),
+    }],
+  }), "สร้าง PR สำเร็จ");
+  e.target.reset();
+});
+
+// ---------- Purchase Orders ----------
+
+function renderPOOptions() {
+  const sel = document.querySelector('#po-form select[name="pr_id"]');
+  const approved = state.prs.filter(pr => pr.status === "approved");
+  sel.innerHTML = '<option value="">เลือก PR ที่ approved</option>' +
+    approved.map(pr => `<option value="${pr.id}">PR #${pr.id} — ${pr.requested_by} (${pr.total_amount.toFixed(2)})</option>`).join("");
+}
+
+function renderPO() {
+  document.getElementById("po-count").textContent = `(${state.pos.length})`;
+  const el = document.getElementById("po-table");
+  if (!state.pos.length) { el.innerHTML = '<div class="empty">ยังไม่มี PO</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>ผู้ขาย</th><th>ยอดรวม</th><th>สถานะ</th><th>Action</th></tr></thead><tbody>
+    ${state.pos.map(po => `
+      <tr>
+        <td>${po.id}</td>
+        <td>${po.vendor_name}</td>
+        <td>${po.total_amount.toFixed(2)}</td>
+        <td>${badge(po.status)}</td>
+        <td class="actions">
+          ${po.status === "draft" ? `<button onclick="poAction(${po.id},'submit')">Submit</button>` : ""}
+          ${po.status === "submitted" ? `<button onclick="poAction(${po.id},'approve')">Approve</button>` : ""}
+          ${["draft","submitted","approved"].includes(po.status) ? `<button class="danger" onclick="poAction(${po.id},'cancel')">Cancel</button>` : ""}
+        </td>
+      </tr>`).join("")}
+  </tbody></table>`;
+}
+
+function poAction(id, action) {
+  act(() => api("POST", `/purchase-orders/${id}/${action}`), `PO #${id}: ${action} สำเร็จ`);
+}
+
+document.getElementById("po-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const prId = Number(f.get("pr_id"));
+  const pr = state.prs.find(p => p.id === prId);
+  if (!pr) { showToast("กรุณาเลือก PR", true); return; }
+  act(() => api("POST", "/purchase-orders", {
+    pr_id: prId,
+    vendor_name: f.get("vendor_name"),
+    lines: pr.lines.map(l => ({ item_name: l.item_name, quantity: l.quantity, unit_price: l.unit_price })),
+  }), "สร้าง PO สำเร็จ");
+  e.target.reset();
+});
+
+// ---------- Goods Receipts ----------
+
+function renderGROptions() {
+  const sel = document.querySelector('#gr-form select[name="po_id"]');
+  const eligible = state.pos.filter(po => po.status === "approved" || po.status === "partially_received");
+  sel.innerHTML = '<option value="">เลือก PO ที่ approved</option>' +
+    eligible.map(po => `<option value="${po.id}">PO #${po.id} — ${po.vendor_name} (เหลือรับ ${po.lines[0].quantity - po.lines[0].quantity_received})</option>`).join("");
+}
+
+function renderGR() {
+  document.getElementById("gr-count").textContent = `(${state.grs.length})`;
+  const el = document.getElementById("gr-table");
+  if (!state.grs.length) { el.innerHTML = '<div class="empty">ยังไม่มี GR</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>PO</th><th>ยอดรวม</th><th>สถานะ</th><th>Action</th></tr></thead><tbody>
+    ${state.grs.map(gr => `
+      <tr>
+        <td>${gr.id}</td>
+        <td>#${gr.po_id}</td>
+        <td>${gr.total_amount != null ? gr.total_amount.toFixed(2) : "—"}</td>
+        <td>${badge(gr.status)}</td>
+        <td class="actions">
+          ${gr.status === "draft" ? `<button onclick="grAction(${gr.id})">Post (ทริกเกอร์ GL)</button>` : ""}
+        </td>
+      </tr>`).join("")}
+  </tbody></table>`;
+}
+
+function grAction(id) {
+  act(() => api("POST", `/goods-receipts/${id}/post`), `GR #${id}: post สำเร็จ — ลงบัญชีอัตโนมัติแล้ว`);
+}
+
+document.getElementById("gr-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const poId = Number(f.get("po_id"));
+  const po = state.pos.find(p => p.id === poId);
+  if (!po) { showToast("กรุณาเลือก PO", true); return; }
+  const line = po.lines[0];
+  const remaining = line.quantity - line.quantity_received;
+  const qty = Number(f.get("quantity_received")) || remaining;
+  act(() => api("POST", "/goods-receipts", {
+    po_id: poId,
+    lines: [{ line_number: line.line_number, quantity_received: qty }],
+  }), "สร้าง GR สำเร็จ");
+  e.target.reset();
+});
+
+// ---------- Payments ----------
+
+function renderPaymentOptions() {
+  const sel = document.querySelector('#payment-form select[name="gr_id"]');
+  const paidGrIds = new Set(state.payments.map(p => p.gr_id));
+  const eligible = state.grs.filter(gr => gr.status === "posted" && !paidGrIds.has(gr.id));
+  sel.innerHTML = '<option value="">เลือก GR ที่ posted</option>' +
+    eligible.map(gr => `<option value="${gr.id}">GR #${gr.id} — ยอด ${gr.total_amount.toFixed(2)}</option>`).join("");
+}
+
+function renderPayment() {
+  document.getElementById("payment-count").textContent = `(${state.payments.length})`;
+  const el = document.getElementById("payment-table");
+  if (!state.payments.length) { el.innerHTML = '<div class="empty">ยังไม่มี Payment</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>GR</th><th>ยอด</th><th>สถานะ</th><th>Action</th></tr></thead><tbody>
+    ${state.payments.map(p => `
+      <tr>
+        <td>${p.id}</td>
+        <td>#${p.gr_id}</td>
+        <td>${p.amount.toFixed(2)}</td>
+        <td>${badge(p.status)}</td>
+        <td class="actions">
+          ${p.status === "draft" ? `<button onclick="paymentAction(${p.id},'approve')">Approve</button>` : ""}
+          ${p.status === "approved" ? `<button onclick="paymentAction(${p.id},'pay')">Pay (ทริกเกอร์ GL)</button>` : ""}
+        </td>
+      </tr>`).join("")}
+  </tbody></table>`;
+}
+
+function paymentAction(id, action) {
+  act(() => api("POST", `/payments/${id}/${action}`), `Payment #${id}: ${action} สำเร็จ`);
+}
+
+document.getElementById("payment-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const grId = Number(f.get("gr_id"));
+  const gr = state.grs.find(g => g.id === grId);
+  if (!gr) { showToast("กรุณาเลือก GR", true); return; }
+  act(() => api("POST", "/payments", { gr_id: grId, amount: gr.total_amount }), "สร้าง Payment สำเร็จ");
+  e.target.reset();
+});
+
+// ---------- Ledger ----------
+
+const ACCOUNT_NAMES = { "1000": "Inventory", "1100": "Cash/Bank", "2100": "GR/IR Clearing" };
+
+function renderLedger() {
+  const jEl = document.getElementById("journal-table");
+  if (!state.entries.length) {
+    jEl.innerHTML = '<div class="empty">ยังไม่มีการลงบัญชี</div>';
+  } else {
+    jEl.innerHTML = `<table><thead><tr><th>#</th><th>เหตุการณ์</th><th>รายการ</th></tr></thead><tbody>
+      ${state.entries.map(e => `
+        <tr>
+          <td>${e.id}</td>
+          <td>${e.source_event}</td>
+          <td>${e.lines.map(l => `${ACCOUNT_NAMES[l.account_code] || l.account_code}: ${l.debit ? "Dr " + l.debit.toFixed(2) : "Cr " + l.credit.toFixed(2)}`).join("<br>")}</td>
+        </tr>`).join("")}
+    </tbody></table>`;
+  }
+
+  const bEl = document.getElementById("trial-balance-table");
+  const totalDebit = state.balance.reduce((s, r) => s + r.debit, 0);
+  const totalCredit = state.balance.reduce((s, r) => s + r.credit, 0);
+  const balanced = totalDebit.toFixed(2) === totalCredit.toFixed(2);
+  bEl.innerHTML = `<table><thead><tr><th>บัญชี</th><th>Debit</th><th>Credit</th></tr></thead><tbody>
+      ${state.balance.map(r => `<tr><td>${r.account_name}</td><td>${r.debit.toFixed(2)}</td><td>${r.credit.toFixed(2)}</td></tr>`).join("")}
+      <tr style="font-weight:600;border-top:2px solid var(--border);">
+        <td>รวม</td><td>${totalDebit.toFixed(2)}</td><td>${totalCredit.toFixed(2)}</td>
+      </tr>
+    </tbody></table>
+    <p class="${balanced ? "balance-ok" : ""}">${balanced ? "✓ Balanced" : "⚠ ไม่ balance!"}</p>`;
+}
+
+function renderAll() {
+  renderPR();
+  renderPOOptions();
+  renderPO();
+  renderGROptions();
+  renderGR();
+  renderPaymentOptions();
+  renderPayment();
+  renderLedger();
+}
+
+refreshAll().catch(e => showToast(e.message, true));
+</script>
+
+</body>
+</html>
