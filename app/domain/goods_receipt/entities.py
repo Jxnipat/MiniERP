@@ -41,6 +41,9 @@ class GoodsReceipt(StateMachineMixin, AggregateRoot):
         AggregateRoot.__init__(self)
         if not lines:
             raise DomainValidationError("a goods receipt needs at least one line")
+        line_numbers = [line.line_number for line in lines]
+        if len(line_numbers) != len(set(line_numbers)):
+            raise DomainValidationError("duplicate line_number in goods receipt lines")
         self.id = id
         self.po_id = po_id
         self.lines = lines

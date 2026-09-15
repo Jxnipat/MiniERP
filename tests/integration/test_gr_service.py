@@ -25,6 +25,23 @@ def approved_po(uow):
     return po_service.approve(po.id)
 
 
+def draft_po(uow):
+    pr_service = PRService(uow)
+    pr = pr_service.create(
+        requested_by="alice",
+        lines=[{"item_name": "Laptop Stand", "quantity": 10, "unit_price": 25.50}],
+    )
+    pr_service.submit(pr.id)
+    pr_service.approve(pr.id)
+
+    po_service = POService(uow)
+    return po_service.create(
+        pr_id=pr.id,
+        vendor_name="Acme Supplies Co.",
+        lines=[{"item_name": "Laptop Stand", "quantity": 10, "unit_price": 25.50}],
+    )
+
+
 def test_posting_a_full_receipt_updates_po_and_creates_journal_entry(uow):
     po = approved_po(uow)
     gr_service = GRService(uow)
@@ -65,3 +82,11 @@ def test_over_receiving_raises(uow):
 
     with pytest.raises(DomainValidationError):
         gr_service.post(gr.id)
+
+
+def test_create_against_non_approved_po_raises(uow):
+    po = draft_po(uow)
+    gr_service = GRService(uow)
+
+    with pytest.raises(DomainValidationError):
+        gr_service.create(po_id=po.id, lines=[{"line_number": 1, "quantity_received": 5}])

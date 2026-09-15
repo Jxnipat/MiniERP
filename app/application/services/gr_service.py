@@ -1,5 +1,6 @@
 from app.application.gl_engine import GLEngine
 from app.domain.goods_receipt.entities import GoodsReceipt, GRLine
+from app.domain.purchase_order.entities import POStatus
 from app.domain.shared.errors import DomainValidationError, NotFoundError
 
 
@@ -13,6 +14,10 @@ class GRService:
             po = self.uow.po_repo.get(po_id)
             if po is None:
                 raise NotFoundError(f"purchase order {po_id} not found")
+            if po.status not in (POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED):
+                raise DomainValidationError(
+                    f"cannot create a goods receipt against a purchase order in status '{po.status}'"
+                )
             gr = GoodsReceipt.create(po_id=po_id, lines=[GRLine(**line) for line in lines])
             self.uow.gr_repo.add(gr)
             self.uow.commit()

@@ -20,6 +20,10 @@ class LedgerService:
         }
         for entry in entries:
             for line in entry.lines:
+                balances.setdefault(
+                    line.account_code,
+                    {"name": line.account_code, "debit": 0.0, "credit": 0.0},
+                )
                 balances[line.account_code]["debit"] += line.debit
                 balances[line.account_code]["credit"] += line.credit
         return balances

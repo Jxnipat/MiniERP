@@ -11,9 +11,11 @@ router = APIRouter(prefix="/purchase-requisitions", tags=["Purchase Requisitions
 
 @router.post("", response_model=PROut, status_code=201)
 def create_pr(payload: PRCreate, service: PRService = Depends(get_pr_service)) -> PROut:
-    pr = service.create(
-        requested_by=payload.requested_by,
-        lines=[line.model_dump() for line in payload.lines],
+    pr = run(
+        lambda: service.create(
+            requested_by=payload.requested_by,
+            lines=[line.model_dump() for line in payload.lines],
+        )
     )
     return PROut.model_validate(pr)
 

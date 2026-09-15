@@ -50,3 +50,14 @@ def test_gr_requires_at_least_one_line():
 def test_gr_line_requires_positive_quantity():
     with pytest.raises(DomainValidationError):
         GRLine(line_number=1, quantity_received=0)
+
+
+def test_gr_rejects_duplicate_line_numbers():
+    with pytest.raises(DomainValidationError):
+        GoodsReceipt.create(
+            po_id=1,
+            lines=[
+                GRLine(line_number=1, quantity_received=5),
+                GRLine(line_number=1, quantity_received=6),
+            ],
+        )
